@@ -808,7 +808,7 @@ h1 {
     }
   }
 
-  function drawTrail(curve, hue) {
+  function drawTrail(curve, hue, persist) {
     if (!trailsEl) return null;
     syncTrailsSize();
     var d = "M " + curve.p0.x + " " + curve.p0.y +
@@ -823,19 +823,32 @@ h1 {
     path.setAttribute("stroke-linecap", "round");
     path.setAttribute("opacity", "0.55");
     trailsEl.appendChild(path);
-    activeTrails.push(path);
-    pruneTrails();
-    setTimeout(function () {
-      if (path.parentNode) path.parentNode.removeChild(path);
-      var i;
-      for (i = 0; i < activeTrails.length; i++) {
-        if (activeTrails[i] === path) {
-          activeTrails.splice(i, 1);
-          break;
+    // Persistent trails stay in the DOM and are never pruned; their rid owns them.
+    if (!persist) {
+      activeTrails.push(path);
+      pruneTrails();
+      setTimeout(function () {
+        if (path.parentNode) path.parentNode.removeChild(path);
+        var i;
+        for (i = 0; i < activeTrails.length; i++) {
+          if (activeTrails[i] === path) {
+            activeTrails.splice(i, 1);
+            break;
+          }
         }
-      }
-    }, TRAIL_FADE_MS);
+      }, TRAIL_FADE_MS);
+    }
     return path;
+  }
+
+  function clearOutTrail(rid) {
+    var st, path;
+    if (!rid) return;
+    st = liveState[rid];
+    if (!st) return;
+    path = st.outTrail;
+    if (path && path.parentNode) path.parentNode.removeChild(path);
+    delete st.outTrail;
   }
 
   function clearLiveLink(rid) {
@@ -1113,6 +1126,7 @@ h1 {
     job = { agent: st.agent, model: st.model, hue: hashHue(st.agent), rid: rid };
     pts = centersFor(job);
     if (!pts) {
+      clearOutTrail(rid);
       clearLiveLink(rid);
       destroyFlier(rid);
       delete liveState[rid];
@@ -1124,7 +1138,7 @@ h1 {
     st.phase = "out";
     rec = ensureFlier(rid, job.hue);
     outCurve = buildCurve(pts.agentC, pts.hubC, pts.modelC, job.agent, true);
-    outPath = drawTrail(outCurve, job.hue);
+    outPath = drawTrail(outCurve, job.hue, true);
     // No live link until the bird lands; trail grows with the bird instead.
     if (outPath) outPath.setAttribute("d", partialQuadD(outCurve, 0));
     showBerryOn(rec, job.hue);
@@ -1137,13 +1151,15 @@ h1 {
       var modelCell, perch, cur;
       flyingCount -= 1;
       boostWingsOn(rec);
-      if (outPath) outPath.setAttribute("opacity", "0.18");
       cur = liveState[rid];
       if (!cur) {
+        if (outPath && outPath.parentNode) outPath.parentNode.removeChild(outPath);
         destroyFlier(rid);
         updateIdleBird();
         return;
       }
+      // Keep the outbound flight trail visible at normal opacity.
+      if (outPath) cur.outTrail = outPath;
       modelCell = findModelCell(cur.model);
       perch = modelCell ? perchOnNode(modelCell) : null;
       if (perch) placeBirdOn(rec, perch.left, perch.top, perch.face);
@@ -1166,6 +1182,7 @@ h1 {
     if (!st) return;
     if (st.phase === "done" || st.phase === "back") return;
     if (st.phase === "seed") {
+      clearOutTrail(rid);
       clearLiveLink(rid);
       destroyFlier(rid);
       delete liveState[rid];
@@ -1181,6 +1198,7 @@ h1 {
     job = { agent: st.agent, model: st.model, hue: hashHue(st.agent), rid: rid };
     pts = centersFor(job);
     if (!pts) {
+      clearOutTrail(rid);
       clearLiveLink(rid);
       destroyFlier(rid);
       delete liveState[rid];
@@ -1205,6 +1223,7 @@ h1 {
       agentCell = findAgentCell(job.agent);
       perch = agentCell ? perchOnNode(agentCell) : null;
       if (perch) placeBirdOn(rec, perch.left, perch.top, perch.face);
+      clearOutTrail(rid);
       clearLiveLink(rid);
       if (liveState[rid]) liveState[rid].phase = "done";
       delete liveState[rid];
