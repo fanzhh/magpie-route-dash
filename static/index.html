@@ -57,20 +57,20 @@ h1 {
   display: flex;
   -webkit-flex-wrap: wrap;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 28px;
   -webkit-box-pack: center;
   -webkit-justify-content: center;
   justify-content: center;
   min-height: 72px;
   padding-top: 48px;
-  margin-bottom: 12px;
+  margin-bottom: 24px;
 }
 .agent-cell {
   display: block;
   float: left;
   min-width: 120px;
   max-width: 220px;
-  margin: 0 10px 10px 0;
+  margin: 0 16px 16px 0;
   padding: 14px 16px;
   border-radius: 12px;
   border: 1px solid #2a3a4c;
@@ -113,7 +113,7 @@ h1 {
   -webkit-justify-content: center;
   justify-content: center;
   min-height: 72px;
-  padding: 24px 0;
+  padding: 32px 0;
   text-align: center;
 }
 #hub .hub-mark {
@@ -148,19 +148,19 @@ h1 {
   display: flex;
   -webkit-flex-wrap: wrap;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 24px;
   -webkit-box-pack: center;
   -webkit-justify-content: center;
   justify-content: center;
   width: 100%;
   min-height: 88px;
-  margin-top: 16px;
+  margin-top: 24px;
 }
 .model-cell {
   display: block;
   float: left;
   width: auto;
-  margin: 0 10px 10px 0;
+  margin: 0 16px 16px 0;
   padding: 12px 14px;
   min-height: 70px;
   border-radius: 12px;
@@ -586,17 +586,30 @@ h1 {
   }
 
   function perchOnNode(cell) {
-    var cellRect, stageRect, FEET_OVERLAP, left, top;
+    var cellRect, stageRect, FEET_OVERLAP, left, top, faceDir;
+    var cellCenterX, stageCenterX;
     if (!cell) return null;
     cellRect = cell.getBoundingClientRect();
     stageRect = stage.getBoundingClientRect();
     FEET_OVERLAP = 10; // tune 8-14 so feet rest on top edge of rounded border
-    left = (cellRect.left - stageRect.left) + 4; // left corner of node
+    cellCenterX = cellRect.left + (cellRect.width / 2);
+    stageCenterX = stageRect.left + (stageRect.width / 2);
+    // Prefer inward corner toward stage/hub center; face toward node center.
+    if (cellCenterX < stageCenterX) {
+      // cell is left of center → perch on RIGHT corner, face left (-1)
+      left = (cellRect.left - stageRect.left) + cellRect.width - BIRD_W - 4;
+      faceDir = -1;
+    } else {
+      // cell is right of (or at) center → perch on LEFT corner, face right (+1)
+      left = (cellRect.left - stageRect.left) + 4;
+      faceDir = 1;
+    }
     top = (cellRect.top - stageRect.top) - BIRD_H + FEET_OVERLAP; // feet on top border
     if (top < 0) top = 0;
     return {
       left: left,
-      top: top
+      top: top,
+      face: faceDir
     };
   }
 
@@ -768,7 +781,7 @@ h1 {
       modelCell = findModelCell(st.model);
       if (!modelCell) continue;
       perch = perchOnNode(modelCell);
-      if (perch) placeBird(perch.left, perch.top, null);
+      if (perch) placeBird(perch.left, perch.top, perch.face);
       return;
     }
   }
@@ -854,7 +867,7 @@ h1 {
     cols = Math.max(1, Math.min(N, cols, maxByWidth));
     modelsEl.style.display = "grid";
     modelsEl.style.gridTemplateColumns = "repeat(" + cols + ", 1fr)";
-    modelsEl.style.gap = "10px";
+    modelsEl.style.gap = "24px";
     modelsEl.style.width = "100%";
     cells = modelsEl.getElementsByClassName("model-cell");
     for (i = 0; i < cells.length; i++) {
@@ -959,7 +972,7 @@ h1 {
       modelCell = findModelCell(job.model);
       if (modelCell) {
         perch = perchOnNode(modelCell);
-        if (perch) placeBird(perch.left, perch.top, null);
+        if (perch) placeBird(perch.left, perch.top, perch.face);
       }
       markPair(job.agent, job.model);
       if (onLanded) onLanded(true);
@@ -989,7 +1002,7 @@ h1 {
       agentCell = findAgentCell(job.agent);
       if (agentCell) {
         perch = perchOnNode(agentCell);
-        if (perch) placeBird(perch.left, perch.top, null);
+        if (perch) placeBird(perch.left, perch.top, perch.face);
       }
       flightTimer = setTimeout(function () {
         flightTimer = null;
@@ -1229,7 +1242,7 @@ h1 {
       if (!modelCell) continue;
       perch = perchOnNode(modelCell);
       if (perch) {
-        placeBird(perch.left, perch.top, null);
+        placeBird(perch.left, perch.top, perch.face);
         found = true;
         break;
       }
