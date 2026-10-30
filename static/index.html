@@ -409,6 +409,18 @@ h1 {
     if (indexOf(agentOrder, name) === -1) agentOrder.push(name);
   }
 
+  function routeIsRecent(row) {
+    var t, ms, now;
+    if (!row) return false;
+    if (row.done === false) return true;
+    t = row.time || row.t || "";
+    if (!t) return false;
+    ms = Date.parse(String(t));
+    if (isNaN(ms)) return false;
+    now = Date.now();
+    return (now - ms) <= AGENT_TTL_MS;
+  }
+
   function ensureModel(model, prov) {
     if (!model) return;
     if (indexOf(chipOrder, model) === -1) {
@@ -710,7 +722,8 @@ h1 {
     for (i = 0; i < rows.length; i++) {
       row = rows[i] || {};
       agent = agentOf(row);
-      touchAgent(agent);
+      // Only refresh agent TTL for in-flight or recent routes — not the whole ring buffer.
+      if (routeIsRecent(row)) touchAgent(agent);
       model = modelOf(row);
       if (!model) continue;
       prov = row.providerName || row.provider || "";
@@ -1003,7 +1016,7 @@ h1 {
       agent = agentOf(row);
       model = modelOf(row);
       done = row.done !== false;
-      touchAgent(agent);
+      // agent TTL / order: syncOrders already touched recent/in-flight
       ensureModel(model, row.providerName || row.provider || "");
 
       if (!seenRids[rid]) {
