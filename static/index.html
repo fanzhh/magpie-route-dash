@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>Magpie Routing</title>
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #0b0f14;
+  color: #e8eef5;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 22px;
+  -webkit-text-size-adjust: 100%;
+}
+header {
+  padding: 14px 18px 8px;
+  background: #121820;
+  border-bottom: 1px solid #243041;
+}
+h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+#meta {
+  margin-top: 6px;
+  font-size: 17px;
+  color: #9aa8b8;
+}
+#meta .ok { color: #5dde8a; }
+#meta .bad { color: #ff6b6b; }
+#stage {
+  position: relative;
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-orient: vertical;
+  -webkit-box-direction: normal;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  min-height: calc(100vh - 88px);
+  padding: 18px 16px 28px;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: -webkit-linear-gradient(top, #15202b 0%, #0b0f14 55%, #101820 100%);
+  background: linear-gradient(to bottom, #15202b 0%, #0b0f14 55%, #101820 100%);
+}
+#agents {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  gap: 12px;
+  -webkit-box-pack: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  min-height: 72px;
+}
+.agent-cell {
+  display: block;
+  float: left;
+  min-width: 120px;
+  max-width: 220px;
+  margin: 0 10px 10px 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #2a3a4c;
+  background: #182230;
+  color: #d5e0ea;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@supports (display: flex) or (display: grid) {
+  .agent-cell {
+    float: none;
+    margin: 0;
+  }
+}
+.agent-cell.on {
+  border-color: #5dde8a;
+  background: #1a3a28;
+  color: #e8eef5;
+  -webkit-box-shadow: 0 0 14px rgba(93, 222, 138, 0.35);
+  box-shadow: 0 0 14px rgba(93, 222, 138, 0.35);
+}
+#hub {
+  -webkit-box-flex: 0;
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-box-pack: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 0;
+  text-align: center;
+}
+#hub .hub-mark {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #e8eef5;
+  text-shadow: 0 0 28px rgba(93, 222, 138, 0.25);
+}
+#hub .hub-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  color: #7f8c9b;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+#trails {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 15;
+  pointer-events: none;
+  overflow: visible;
+}
+#models {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  gap: 10px;
+  -webkit-box-pack: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 88px;
+}
+.model-cell {
+  display: block;
+  float: left;
+  width: auto;
+  margin: 0 10px 10px 0;
+  padding: 12px 14px;
+  min-height: 70px;
+  border-radius: 12px;
+  border: 1px solid #2a3a4c;
+  background: #182230;
+  color: #c8d4e0;
+  font-size: 17px;
+  line-height: 1.25;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+}
+@supports (display: flex) or (display: grid) {
+  .model-cell {
+    float: none;
+    width: auto;
+    margin: 0;
+  }
+}
+.model-cell .chip-name {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-cell .chip-prov {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: #7f8c9b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-cell.on {
+  border-color: #5dde8a;
+  background: #1a3a28;
+  color: #e8eef5;
+  -webkit-box-shadow: 0 0 14px rgba(93, 222, 138, 0.35);
+  box-shadow: 0 0 14px rgba(93, 222, 138, 0.35);
+}
+#flier {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 96px;
+  height: 48px;
+  color: #c8d4e0;
+  z-index: 30;
+  pointer-events: none;
+  visibility: hidden;
+}
+#flier.boost .rt-flier .wing.near,
+#flier.boost .rt-flier .wing.far {
+  -webkit-animation-duration: 0.22s;
+  animation-duration: 0.22s;
+}
+#flierFace {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  -webkit-transform-origin: 50% 50%;
+  transform-origin: 50% 50%;
+}
+#berry {
+  position: absolute;
+  left: 58px;
+  top: 18px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #ff6b6b;
+  border: 2px solid #0b0f14;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  display: none;
+  z-index: 2;
+}
+.rt-flier .body,
+.rt-flier .tail,
+.rt-flier .wing path:first-child,
+.rt-flier .wing.far {
+  fill: currentColor;
+}
+.rt-flier .wing.far {
+  opacity: 0.45;
+}
+.rt-flier .belly {
+  fill: #121820;
+}
+.rt-flier .wing .bar {
+  fill: none;
+  stroke: #121820;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+}
+.rt-flier .wing.near,
+.rt-flier .wing.far {
+  -webkit-transform-origin: -12px -2px;
+  transform-origin: -12px -2px;
+  -webkit-animation: rtflap 0.42s ease-in-out infinite;
+  animation: rtflap 0.42s ease-in-out infinite;
+}
+.rt-flier .wing.far {
+  -webkit-animation-duration: 0.48s;
+  animation-duration: 0.48s;
+}
+@-webkit-keyframes rtflap {
+  0%, 100% { -webkit-transform: rotate(0deg); }
+  55% { -webkit-transform: rotate(-28deg); }
+}
+@keyframes rtflap {
+  0%, 100% { transform: rotate(0deg); }
+  55% { transform: rotate(-28deg); }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Magpie Routing</h1>
+  <div id="meta">loading…</div>
+</header>
+<div id="stage">
+  <svg id="trails" aria-hidden="true"></svg>
+  <div id="agents"></div>
+  <div id="hub">
+    <div>
+      <div class="hub-mark">Magpie</div>
+      <div class="hub-sub">routing stage</div>
+    </div>
+  </div>
+  <div id="models"></div>
+  <div id="flier" aria-hidden="true">
+    <div id="flierFace">
+      <svg viewBox="-40 -30 80 50" width="96" height="48" role="img" aria-label="pigeon">
+        <!-- Original artwork for magpie-route-dash (MIT); Magpie-inspired, not copied from Magpie.app -->
+        <g class="rt-flier">
+          <g class="rt-lift"><g transform="translate(0 2) scale(1.15)">
+            <path class="wing far" d="M-8 -2 C-12 -10 -6 -16 2 -14 C-2 -8 -4 -4 -6 -1 Z"/>
+            <path class="tail" d="M-22 2 L-10 -1 L-9 2 L-21 5 Z"/>
+            <ellipse class="body" cx="-6" cy="0" rx="9" ry="4.5"/>
+            <ellipse class="belly" cx="-7" cy="1.5" rx="5" ry="2"/>
+            <circle class="body" cx="4" cy="-2.5" r="3.6"/>
+            <path class="body" d="M7 -4.2 L14 -2.2 L7 -0.4 Z"/>
+            <g class="wing near">
+              <path d="M-7 -1 C-11 -9 -5 -15 3 -12 C-1 -7 -3 -3 -5 0 Z"/>
+              <path class="bar" d="M-6 -3 C-9 -8 -6 -12 -1 -11"/>
+            </g>
+          </g></g>
+        </g>
+      </svg>
+      <div id="berry"></div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var REFRESH_MS = 2500;
+  var FLY_MS = 1000;
+  var PERCH_MS = 450;
+  var BIRD_W = 96;
+  var BIRD_H = 48;
+  var STEP_MS = 40;
+  var MAX_TRAILS = 4;
+  var TRAIL_FADE_MS = 1500;
+
+  var meta = document.getElementById("meta");
+  var stage = document.getElementById("stage");
+  var agentsEl = document.getElementById("agents");
+  var modelsEl = document.getElementById("models");
+  var hubEl = document.getElementById("hub");
+  var trailsEl = document.getElementById("trails");
+  var flier = document.getElementById("flier");
+  var flierFace = document.getElementById("flierFace");
+  var berry = document.getElementById("berry");
+
+  var seenRids = {};
+  var firstLoad = true;
+  var agentOrder = [];
+  var chipOrder = [];
+  var chipProv = {};
+  var lastAgentKey = "";
+  var lastChipKey = "";
+
+  var flightQueue = [];
+  var flying = false;
+  var birdLeft = 0;
+  var birdTop = 0;
+  var birdPlaced = false;
+  var boostTimer = null;
+  var flightTimer = null;
+  var animTimer = null;
+  var activeTrails = [];
+
+  function pad(n) {
+    return n < 10 ? "0" + n : "" + n;
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function shortName(name, maxLen) {
+    var s = String(name || "");
+    var m = maxLen || 22;
+    if (s.length <= m) return s;
+    return s.slice(0, m - 1) + "…";
+  }
+
+  function ridOf(row) {
+    if (row.rid != null && row.rid !== "") return "d" + row.rid;
+    if (row.route_id != null && row.route_id !== "") return "r" + row.route_id;
+    if (row.response_id) return "x" + row.response_id;
+    return "t" + (row.t || "") + "|" + (row.agent || "") + "|" + (row.req || "") + "|" + (row.ms || "");
+  }
+
+  function agentOf(row) {
+    return row.agentName || row.agent || "—";
+  }
+
+  function modelOf(row) {
+    return row.served || row.model || "";
+  }
+
+  function indexOf(arr, name) {
+    var i;
+    for (i = 0; i < arr.length; i++) {
+      if (arr[i] === name) return i;
+    }
+    return -1;
+  }
+
+  function hashHue(str) {
+    var s = String(str || "");
+    var h = 0;
+    var i;
+    for (i = 0; i < s.length; i++) {
+      h = ((h << 5) - h) + s.charCodeAt(i);
+      h = h & h;
+    }
+    return Math.abs(h) % 360;
+  }
+
+  function setMeta(ok, extra) {
+    var ts = new Date();
+    var clock = pad(ts.getHours()) + ":" + pad(ts.getMinutes()) + ":" + pad(ts.getSeconds());
+    if (ok) {
+      meta.innerHTML = '<span class="ok">● live</span> · refreshed ' + clock + (extra ? " · " + esc(extra) : "");
+    } else {
+      meta.innerHTML = '<span class="bad">● offline</span> · ' + clock + (extra ? " · " + esc(extra) : "");
+    }
+  }
+
+  function setFace(dir) {
+    if (!flierFace) return;
+    if (dir < 0) {
+      flierFace.style.webkitTransform = "scaleX(-1)";
+      flierFace.style.transform = "scaleX(-1)";
+    } else {
+      flierFace.style.webkitTransform = "scaleX(1)";
+      flierFace.style.transform = "scaleX(1)";
+    }
+  }
+
+  function boostWings() {
+    if (!flier) return;
+    var cls = flier.className || "";
+    if (cls.indexOf("boost") === -1) {
+      flier.className = cls + (cls ? " " : "") + "boost";
+    }
+    if (boostTimer) clearTimeout(boostTimer);
+    boostTimer = setTimeout(function () {
+      flier.className = (flier.className || "").replace(/\s*boost\b/g, "").replace(/^\s+|\s+$/g, "");
+      boostTimer = null;
+    }, 900);
+  }
+
+  function showBerry(hue) {
+    if (!berry) return;
+    berry.style.background = "hsl(" + hue + ", 72%, 58%)";
+    berry.style.display = "block";
+  }
+
+  function hideBerry() {
+    if (!berry) return;
+    berry.style.display = "none";
+  }
+
+  function clearOns() {
+    var cells, i;
+    cells = agentsEl.getElementsByClassName("agent-cell");
+    for (i = 0; i < cells.length; i++) {
+      cells[i].className = "agent-cell";
+    }
+    cells = modelsEl.getElementsByClassName("model-cell");
+    for (i = 0; i < cells.length; i++) {
+      cells[i].className = "model-cell";
+    }
+  }
+
+  function findAgentCell(name) {
+    var cells = agentsEl.getElementsByClassName("agent-cell");
+    var i;
+    for (i = 0; i < cells.length; i++) {
+      if ((cells[i].getAttribute("data-agent") || "") === name) return cells[i];
+    }
+    return cells.length ? cells[0] : null;
+  }
+
+  function findModelCell(name) {
+    var cells = modelsEl.getElementsByClassName("model-cell");
+    var i;
+    for (i = 0; i < cells.length; i++) {
+      if ((cells[i].getAttribute("data-model") || "") === name) return cells[i];
+    }
+    return cells.length ? cells[0] : null;
+  }
+
+  function cellCenter(cell) {
+    var cellRect = cell.getBoundingClientRect();
+    var stageRect = stage.getBoundingClientRect();
+    return {
+      left: (cellRect.left - stageRect.left) + (cellRect.width / 2) - (BIRD_W / 2),
+      top: (cellRect.top - stageRect.top) + (cellRect.height / 2) - (BIRD_H / 2)
+    };
+  }
+
+  function placeBird(left, top, faceDir) {
+    flier.style.visibility = "visible";
+    if (faceDir != null) setFace(faceDir);
+    else if (birdPlaced && Math.abs(left - birdLeft) > 2) setFace(left >= birdLeft ? 1 : -1);
+    flier.style.left = left + "px";
+    flier.style.top = top + "px";
+    birdLeft = left;
+    birdTop = top;
+    birdPlaced = true;
+  }
+
+  function hubCenter() {
+    var hubRect = hubEl.getBoundingClientRect();
+    var stageRect = stage.getBoundingClientRect();
+    return {
+      x: (hubRect.left - stageRect.left) + (hubRect.width / 2),
+      y: (hubRect.top - stageRect.top) + (hubRect.height / 2)
+    };
+  }
+
+  function birdCenterFromLeftTop(left, top) {
+    return { x: left + (BIRD_W / 2), y: top + (BIRD_H / 2) };
+  }
+
+  function leftTopFromCenter(cx, cy) {
+    return { left: cx - (BIRD_W / 2), top: cy - (BIRD_H / 2) };
+  }
+
+  function agentCurveOffset(agentName, outbound) {
+    var idx = indexOf(agentOrder, agentName);
+    var n = agentOrder.length || 1;
+    if (idx < 0) idx = 0;
+    var hue = hashHue(agentName);
+    var jitter = ((hue % 17) - 8) * 3;
+    var side = (idx - (n - 1) / 2) * 40 + jitter;
+    if (!outbound) side = -side;
+    var yOff = ((hue % 11) - 5) * 2;
+    if (!outbound) yOff = -yOff;
+    return { x: side, y: yOff };
+  }
+
+  function quadPoint(p0, p1, p2, t) {
+    var u = 1 - t;
+    return {
+      x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+      y: u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y
+    };
+  }
+
+  function buildCurve(fromC, hubC, toC, agentName, outbound) {
+    var off = agentCurveOffset(agentName, outbound);
+    var ctrl = {
+      x: hubC.x + off.x,
+      y: hubC.y + off.y
+    };
+    return { p0: fromC, p1: ctrl, p2: toC };
+  }
+
+  function syncTrailsSize() {
+    if (!trailsEl) return;
+    var w = stage.clientWidth;
+    var h = stage.clientHeight;
+    trailsEl.setAttribute("width", w);
+    trailsEl.setAttribute("height", h);
+    trailsEl.setAttribute("viewBox", "0 0 " + w + " " + h);
+  }
+
+  function pruneTrails() {
+    while (activeTrails.length > MAX_TRAILS) {
+      var old = activeTrails.shift();
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+    }
+  }
+
+  function drawTrail(curve, hue) {
+    if (!trailsEl) return null;
+    syncTrailsSize();
+    var d = "M " + curve.p0.x + " " + curve.p0.y +
+      " Q " + curve.p1.x + " " + curve.p1.y +
+      " " + curve.p2.x + " " + curve.p2.y;
+    var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "hsl(" + hue + ", 70%, 60%)");
+    path.setAttribute("stroke-width", "2.5");
+    path.setAttribute("stroke-dasharray", "8 6");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("opacity", "0.55");
+    trailsEl.appendChild(path);
+    activeTrails.push(path);
+    pruneTrails();
+    setTimeout(function () {
+      if (path.parentNode) path.parentNode.removeChild(path);
+      var i;
+      for (i = 0; i < activeTrails.length; i++) {
+        if (activeTrails[i] === path) {
+          activeTrails.splice(i, 1);
+          break;
+        }
+      }
+    }, TRAIL_FADE_MS);
+    return path;
+  }
+
+  function stopAnim() {
+    if (animTimer) {
+      clearInterval(animTimer);
+      animTimer = null;
+    }
+  }
+
+  function animateAlong(curve, durationMs, onDone) {
+    stopAnim();
+    var steps = Math.max(8, Math.round(durationMs / STEP_MS));
+    var i = 0;
+    var prev = curve.p0;
+    var start = leftTopFromCenter(curve.p0.x, curve.p0.y);
+    placeBird(start.left, start.top, null);
+
+    animTimer = setInterval(function () {
+      i += 1;
+      var t = i / steps;
+      if (t > 1) t = 1;
+      var pt = quadPoint(curve.p0, curve.p1, curve.p2, t);
+      var pos = leftTopFromCenter(pt.x, pt.y);
+      var dx = pt.x - prev.x;
+      if (Math.abs(dx) > 0.5) setFace(dx >= 0 ? 1 : -1);
+      placeBird(pos.left, pos.top, null);
+      prev = pt;
+      if (t >= 1) {
+        stopAnim();
+        if (onDone) onDone();
+      }
+    }, STEP_MS);
+  }
+
+  function syncOrders(rows) {
+    var i, row, agent, model, prov;
+    for (i = 0; i < rows.length; i++) {
+      row = rows[i] || {};
+      agent = agentOf(row);
+      if (agent && indexOf(agentOrder, agent) === -1) {
+        agentOrder.push(agent);
+      }
+      model = modelOf(row);
+      if (!model) continue;
+      prov = row.providerName || row.provider || "";
+      if (indexOf(chipOrder, model) === -1) {
+        chipOrder.push(model);
+        chipProv[model] = prov;
+      } else if (prov) {
+        chipProv[model] = prov;
+      }
+    }
+  }
+
+  function rebuildAgents() {
+    var html = [];
+    var i, name;
+    for (i = 0; i < agentOrder.length; i++) {
+      name = agentOrder[i];
+      html.push(
+        '<div class="agent-cell" data-agent="' + esc(name) + '">' +
+          esc(shortName(name, 18)) +
+        "</div>"
+      );
+    }
+    agentsEl.innerHTML = html.join("");
+  }
+
+  function layoutModelGrid() {
+    var N = chipOrder.length;
+    var maxByWidth, cols, rem, alt, cells, i;
+    if (!modelsEl) return;
+    if (N < 1) {
+      modelsEl.style.display = "";
+      modelsEl.style.gridTemplateColumns = "";
+      return;
+    }
+    maxByWidth = Math.max(1, Math.floor((modelsEl.clientWidth || stage.clientWidth || 320) / 140));
+    cols = Math.ceil(Math.sqrt(N));
+    rem = N % cols;
+    if (rem && cols < N) {
+      alt = cols + 1;
+      if (alt <= maxByWidth && (N % alt === 0 || rem === 1)) {
+        cols = alt;
+      }
+    }
+    cols = Math.max(1, Math.min(N, cols, maxByWidth));
+    modelsEl.style.display = "grid";
+    modelsEl.style.gridTemplateColumns = "repeat(" + cols + ", 1fr)";
+    modelsEl.style.gap = "10px";
+    modelsEl.style.width = "100%";
+    cells = modelsEl.getElementsByClassName("model-cell");
+    for (i = 0; i < cells.length; i++) {
+      cells[i].style.width = "auto";
+      cells[i].style.float = "none";
+      cells[i].style.margin = "0";
+    }
+  }
+
+  function rebuildModels() {
+    var html = [];
+    var i, name, prov;
+    for (i = 0; i < chipOrder.length; i++) {
+      name = chipOrder[i];
+      prov = chipProv[name] || "";
+      html.push(
+        '<div class="model-cell" data-model="' + esc(name) + '">' +
+          '<span class="chip-name">' + esc(shortName(name, 20)) + "</span>" +
+          (prov ? '<span class="chip-prov">' + esc(prov) + "</span>" : "") +
+        "</div>"
+      );
+    }
+    modelsEl.innerHTML = html.join("");
+    layoutModelGrid();
+  }
+
+  function ensureDom() {
+    var aKey = agentOrder.join("|");
+    var cKey = chipOrder.join("|");
+    if (aKey !== lastAgentKey) {
+      rebuildAgents();
+      lastAgentKey = aKey;
+    }
+    if (cKey !== lastChipKey) {
+      rebuildModels();
+      lastChipKey = cKey;
+    }
+  }
+
+  function markPair(agent, model) {
+    var cells, i, name;
+    cells = agentsEl.getElementsByClassName("agent-cell");
+    for (i = 0; i < cells.length; i++) {
+      name = cells[i].getAttribute("data-agent") || "";
+      cells[i].className = name === agent ? "agent-cell on" : "agent-cell";
+    }
+    cells = modelsEl.getElementsByClassName("model-cell");
+    for (i = 0; i < cells.length; i++) {
+      name = cells[i].getAttribute("data-model") || "";
+      cells[i].className = name === model ? "model-cell on" : "model-cell";
+    }
+  }
+
+  function finishFlight() {
+    clearOns();
+    hideBerry();
+    flying = false;
+    maybeStartFlight();
+  }
+
+  function runFlight(job) {
+    var agentCell = findAgentCell(job.agent);
+    var modelCell = findModelCell(job.model);
+    var agentC, modelC, hubC, outCurve, backCurve, outPath;
+
+    if (!agentCell || !modelCell || !hubEl) {
+      flying = false;
+      maybeStartFlight();
+      return;
+    }
+
+    markPair(job.agent, job.model);
+    agentC = cellCenter(agentCell);
+    modelC = cellCenter(modelCell);
+    hubC = hubCenter();
+
+    // Centers for Bezier (cellCenter returns left/top of bird perch — convert)
+    agentC = { x: agentC.left + (BIRD_W / 2), y: agentC.top + (BIRD_H / 2) };
+    modelC = { x: modelC.left + (BIRD_W / 2), y: modelC.top + (BIRD_H / 2) };
+
+    outCurve = buildCurve(agentC, hubC, modelC, job.agent, true);
+    backCurve = buildCurve(modelC, hubC, agentC, job.agent, false);
+
+    outPath = drawTrail(outCurve, job.hue);
+
+    showBerry(job.hue);
+    boostWings();
+    if (flightTimer) clearTimeout(flightTimer);
+    flightTimer = null;
+
+    // agent → via hub → model (berry), perch, then model → via hub → agent
+    animateAlong(outCurve, FLY_MS, function () {
+      boostWings();
+      flightTimer = setTimeout(function () {
+        hideBerry();
+        boostWings();
+        if (outPath) {
+          outPath.setAttribute("opacity", "0.18");
+        }
+        drawTrail(backCurve, job.hue);
+        animateAlong(backCurve, FLY_MS, function () {
+          flightTimer = setTimeout(function () {
+            flightTimer = null;
+            finishFlight();
+          }, 40);
+        });
+      }, PERCH_MS);
+    });
+  }
+
+  function maybeStartFlight() {
+    var job;
+    if (flying) return;
+    if (!flightQueue.length) return;
+    job = flightQueue.shift();
+    flying = true;
+    runFlight(job);
+  }
+
+  function enqueueFlight(agent, model) {
+    if (!agent || !model) return;
+    flightQueue.push({
+      agent: agent,
+      model: model,
+      hue: hashHue(agent)
+    });
+    maybeStartFlight();
+  }
+
+  function processRows(rows) {
+    var i, row, rid, agent, model;
+    var newestFirst = rows || [];
+    var discovered = [];
+
+    syncOrders(newestFirst);
+    ensureDom();
+
+    if (firstLoad) {
+      for (i = 0; i < newestFirst.length; i++) {
+        seenRids[ridOf(newestFirst[i] || {})] = true;
+      }
+      firstLoad = false;
+      return;
+    }
+
+    for (i = 0; i < newestFirst.length; i++) {
+      row = newestFirst[i] || {};
+      rid = ridOf(row);
+      if (seenRids[rid]) continue;
+      seenRids[rid] = true;
+      agent = agentOf(row);
+      model = modelOf(row);
+      discovered.push({ agent: agent, model: model });
+    }
+
+    // Queue in chronological order (API is newest-first).
+    for (i = discovered.length - 1; i >= 0; i--) {
+      enqueueFlight(discovered[i].agent, discovered[i].model);
+    }
+  }
+
+  function tick() {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "/api/routes", true);
+    xhr.timeout = 8000;
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      if (xhr.status >= 200 && xhr.status < 300) {
+        var data;
+        try {
+          data = JSON.parse(xhr.responseText);
+        } catch (e) {
+          setMeta(false, "bad json");
+          return;
+        }
+        var rows = (data && data.rows) ? data.rows : [];
+        processRows(rows);
+        setMeta(true, rows.length + " routes · q " + flightQueue.length + (flying ? " · flying" : ""));
+      } else {
+        setMeta(false, "http " + xhr.status);
+      }
+    };
+    xhr.ontimeout = function () {
+      setMeta(false, "timeout");
+    };
+    xhr.onerror = function () {
+      setMeta(false, "network");
+    };
+    xhr.send(null);
+  }
+
+  function onResize() {
+    layoutModelGrid();
+    if (flying) return;
+    if (!birdPlaced) return;
+    placeBird(birdLeft, birdTop, null);
+    // Snap bird near hub center when idle.
+    var stageRect = stage.getBoundingClientRect();
+    var left = (stage.clientWidth / 2) - (BIRD_W / 2);
+    var hub = document.getElementById("hub");
+    var top = 80;
+    if (hub) {
+      var hubRect = hub.getBoundingClientRect();
+      top = (hubRect.top - stageRect.top) + (hubRect.height / 2) - (BIRD_H / 2);
+    }
+    placeBird(left, top, 1);
+  }
+
+  if (window.addEventListener) {
+    window.addEventListener("resize", onResize, false);
+  } else if (window.attachEvent) {
+    window.attachEvent("onresize", onResize);
+  }
+
+  tick();
+  setInterval(tick, REFRESH_MS);
+})();
+</script>
+</body>
+</html>
