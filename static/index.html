@@ -154,6 +154,7 @@ h1 {
   justify-content: center;
   width: 100%;
   min-height: 88px;
+  padding-top: 48px;
   margin-top: 24px;
 }
 .model-cell {
@@ -352,6 +353,7 @@ h1 {
   var idleRec = null;
   var activeTrails = [];
   var liveLinks = {};
+  var outTrails = {};
 
   function pad(n) {
     return n < 10 ? "0" + n : "" + n;
@@ -556,6 +558,8 @@ h1 {
 
   function destroyFlier(rid) {
     var rec = fliers[rid];
+    clearOutTrail(rid);
+    clearLiveLink(rid);
     if (!rec) return;
     stopFlierAnim(rec);
     if (rec.boostTimer) { clearTimeout(rec.boostTimer); rec.boostTimer = null; }
@@ -844,11 +848,11 @@ h1 {
   function clearOutTrail(rid) {
     var st, path;
     if (!rid) return;
-    st = liveState[rid];
-    if (!st) return;
-    path = st.outTrail;
+    path = outTrails[rid];
     if (path && path.parentNode) path.parentNode.removeChild(path);
-    delete st.outTrail;
+    delete outTrails[rid];
+    st = liveState[rid];
+    if (st) delete st.outTrail;
   }
 
   function clearLiveLink(rid) {
@@ -907,8 +911,25 @@ h1 {
     liveLinks[rid] = path;
   }
 
+  function showPerched(rid) {
+    var st, rec, modelCell, perch, hue;
+    st = liveState[rid];
+    if (!st || st.phase !== "perch") return;
+    hue = hashHue(st.agent);
+    rec = ensureFlier(rid, hue);
+    modelCell = findModelCell(st.model);
+    perch = modelCell ? perchOnNode(modelCell) : null;
+    if (!perch) {
+      clearLiveLink(rid);
+      return;
+    }
+    if (!rec.animTimer) placeBirdOn(rec, perch.left, perch.top, perch.face);
+    showBerryOn(rec, hue);
+    setLiveLink(rid, st.agent, st.model, hue);
+  }
+
   function redrawLiveLinks() {
-    var rid, st, keys, i;
+    var rid, st, keys, i, rec;
     // Live links exist only for perched birds; "back" keeps an existing link
     // (geometry follows the pigeon) and "out"/"seed" must never have one.
     for (rid in liveState) {
@@ -916,9 +937,14 @@ h1 {
       st = liveState[rid];
       if (!st) continue;
       if (st.phase === "perch") {
-        setLiveLink(rid, st.agent, st.model, hashHue(st.agent));
+        showPerched(rid);
       } else if (st.phase === "back") {
-        if (liveLinks[rid]) updateLiveLinkGeometry(rid);
+        rec = fliers[rid];
+        if (rec && rec.el && rec.el.style.visibility !== "hidden") {
+          if (liveLinks[rid]) updateLiveLinkGeometry(rid);
+        } else {
+          clearLiveLink(rid);
+        }
       } else {
         clearLiveLink(rid);
       }
@@ -1148,7 +1174,7 @@ h1 {
     animateFlier(rec, outCurve, FLY_MS, function (_rec, t) {
       if (outPath) outPath.setAttribute("d", partialQuadD(outCurve, t));
     }, function () {
-      var modelCell, perch, cur;
+      var cur;
       flyingCount -= 1;
       boostWingsOn(rec);
       cur = liveState[rid];
@@ -1159,13 +1185,13 @@ h1 {
         return;
       }
       // Keep the outbound flight trail visible at normal opacity.
-      if (outPath) cur.outTrail = outPath;
-      modelCell = findModelCell(cur.model);
-      perch = modelCell ? perchOnNode(modelCell) : null;
-      if (perch) placeBirdOn(rec, perch.left, perch.top, perch.face);
+      if (outPath) {
+        cur.outTrail = outPath;
+        outTrails[rid] = outPath;
+      }
       cur.phase = "perch";
+      showPerched(rid);
       refreshHighlights();
-      setLiveLink(rid, cur.agent, cur.model, hashHue(cur.agent));
       snapPerchedBirds();
       updateLiveLinkGeometry(rid);
       updateIdleBird();
@@ -1248,7 +1274,7 @@ h1 {
         rid = ridOf(row);
         seenRids[rid] = true;
         liveState[rid] = {
-          phase: row.done === false ? "seed" : "done",
+          phase: row.done === false ? "perch" : "done",
           agent: agentOf(row),
           model: modelOf(row),
           pendingReturn: false
@@ -1257,6 +1283,12 @@ h1 {
       }
       pruneAgents();
       ensureDom();
+      for (rid in liveState) {
+        if (!liveState.hasOwnProperty(rid)) continue;
+        if (liveState[rid] && liveState[rid].phase === "perch") showPerched(rid);
+      }
+      refreshHighlights();
+      updateIdleBird();
       firstLoad = false;
       return;
     }
