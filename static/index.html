@@ -1165,6 +1165,7 @@ h1 {
     rec = ensureFlier(rid, job.hue);
     outCurve = buildCurve(pts.agentC, pts.hubC, pts.modelC, job.agent, true);
     outPath = drawTrail(outCurve, job.hue, true);
+    if (outPath) outTrails[rid] = outPath;
     // No live link until the bird lands; trail grows with the bird instead.
     if (outPath) outPath.setAttribute("d", partialQuadD(outCurve, 0));
     showBerryOn(rec, job.hue);
@@ -1288,6 +1289,7 @@ h1 {
         if (liveState[rid] && liveState[rid].phase === "perch") showPerched(rid);
       }
       refreshHighlights();
+      snapPerchedBirds();
       updateIdleBird();
       firstLoad = false;
       return;
