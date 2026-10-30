@@ -773,6 +773,25 @@ h1 {
     return { p0: fromC, p1: ctrl, p2: toC };
   }
 
+  // De Casteljau split: path segment of the quad curve from t=0 to t.
+  function partialQuadD(curve, t) {
+    var p01, p12, p;
+    p01 = {
+      x: curve.p0.x + (curve.p1.x - curve.p0.x) * t,
+      y: curve.p0.y + (curve.p1.y - curve.p0.y) * t
+    };
+    p12 = {
+      x: curve.p1.x + (curve.p2.x - curve.p1.x) * t,
+      y: curve.p1.y + (curve.p2.y - curve.p1.y) * t
+    };
+    p = {
+      x: p01.x + (p12.x - p01.x) * t,
+      y: p01.y + (p12.y - p01.y) * t
+    };
+    return "M " + curve.p0.x + " " + curve.p0.y +
+      " Q " + p01.x + " " + p01.y + " " + p.x + " " + p.y;
+  }
+
   function syncTrailsSize() {
     if (!trailsEl) return;
     var w = stage.clientWidth;
@@ -877,18 +896,26 @@ h1 {
 
   function redrawLiveLinks() {
     var rid, st, keys, i;
+    // Live links exist only for perched birds; "back" keeps an existing link
+    // (geometry follows the pigeon) and "out"/"seed" must never have one.
+    for (rid in liveState) {
+      if (!liveState.hasOwnProperty(rid)) continue;
+      st = liveState[rid];
+      if (!st) continue;
+      if (st.phase === "perch") {
+        setLiveLink(rid, st.agent, st.model, hashHue(st.agent));
+      } else if (st.phase === "back") {
+        if (liveLinks[rid]) updateLiveLinkGeometry(rid);
+      } else {
+        clearLiveLink(rid);
+      }
+    }
+    // Drop any stray links whose rid is no longer live.
     keys = [];
     for (rid in liveLinks) {
       if (liveLinks.hasOwnProperty(rid)) keys.push(rid);
     }
     for (i = 0; i < keys.length; i++) clearLiveLink(keys[i]);
-    for (rid in liveState) {
-      if (!liveState.hasOwnProperty(rid)) continue;
-      st = liveState[rid];
-      if (st && (st.phase === "out" || st.phase === "perch" || st.phase === "back")) {
-        setLiveLink(rid, st.agent, st.model, hashHue(st.agent));
-      }
-    }
   }
 
   function snapPerchedBirds() {
@@ -940,7 +967,7 @@ h1 {
       if (Math.abs(dx) > 0.5) setFaceOn(rec, dx >= 0 ? 1 : -1);
       placeBirdOn(rec, pos.left, pos.top, null);
       prev = pt;
-      if (onStep) onStep(rec);
+      if (onStep) onStep(rec, t);
       if (t >= 1) {
         stopFlierAnim(rec);
         if (onDone) onDone(rec);
@@ -1093,16 +1120,17 @@ h1 {
     }
     refreshHighlights();
     st.phase = "out";
-    setLiveLink(rid, st.agent, st.model, job.hue);
     rec = ensureFlier(rid, job.hue);
     outCurve = buildCurve(pts.agentC, pts.hubC, pts.modelC, job.agent, true);
     outPath = drawTrail(outCurve, job.hue);
+    // No live link until the bird lands; trail grows with the bird instead.
+    if (outPath) outPath.setAttribute("d", partialQuadD(outCurve, 0));
     showBerryOn(rec, job.hue);
     boostWingsOn(rec);
     flyingCount += 1;
     updateIdleBird();
-    animateFlier(rec, outCurve, FLY_MS, function () {
-      updateLiveLinkGeometry(rid);
+    animateFlier(rec, outCurve, FLY_MS, function (_rec, t) {
+      if (outPath) outPath.setAttribute("d", partialQuadD(outCurve, t));
     }, function () {
       var modelCell, perch, cur;
       flyingCount -= 1;
@@ -1119,7 +1147,9 @@ h1 {
       if (perch) placeBirdOn(rec, perch.left, perch.top, perch.face);
       cur.phase = "perch";
       refreshHighlights();
+      setLiveLink(rid, cur.agent, cur.model, hashHue(cur.agent));
       snapPerchedBirds();
+      updateLiveLinkGeometry(rid);
       updateIdleBird();
       if (cur.pendingReturn) {
         cur.pendingReturn = false;
