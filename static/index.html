@@ -62,6 +62,7 @@ h1 {
   -webkit-justify-content: center;
   justify-content: center;
   min-height: 72px;
+  padding-top: 48px;
   margin-bottom: 12px;
 }
 .agent-cell {
@@ -585,14 +586,17 @@ h1 {
   }
 
   function perchOnNode(cell) {
-    var cellRect, stageRect, inset;
+    var cellRect, stageRect, FEET_OVERLAP, left, top;
     if (!cell) return null;
     cellRect = cell.getBoundingClientRect();
     stageRect = stage.getBoundingClientRect();
-    inset = 4;
+    FEET_OVERLAP = 10; // tune 8-14 so feet rest on top edge of rounded border
+    left = (cellRect.left - stageRect.left) + 4; // left corner of node
+    top = (cellRect.top - stageRect.top) - BIRD_H + FEET_OVERLAP; // feet on top border
+    if (top < 0) top = 0;
     return {
-      left: (cellRect.left - stageRect.left) + inset,
-      top: (cellRect.top - stageRect.top) + inset
+      left: left,
+      top: top
     };
   }
 
