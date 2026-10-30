@@ -315,7 +315,7 @@ h1 {
 </div>
 <script>
 (function () {
-  var REFRESH_MS = 2500;
+  var REFRESH_MS = 800;
   var FLY_MS = 1000;
   var PERCH_MS = 450;
   var BIRD_W = 96;
@@ -323,6 +323,7 @@ h1 {
   var STEP_MS = 40;
   var MAX_TRAILS = 4;
   var TRAIL_FADE_MS = 1500;
+  var AGENT_TTL_MS = 300000;
 
   var meta = document.getElementById("meta");
   var stage = document.getElementById("stage");
@@ -341,6 +342,8 @@ h1 {
   var chipProv = {};
   var lastAgentKey = "";
   var lastChipKey = "";
+  var liveState = {};
+  var agentLastSeen = {};
 
   var flightQueue = [];
   var flying = false;
@@ -351,6 +354,7 @@ h1 {
   var flightTimer = null;
   var animTimer = null;
   var activeTrails = [];
+  var activeJob = null;
 
   function pad(n) {
     return n < 10 ? "0" + n : "" + n;
@@ -372,10 +376,11 @@ h1 {
   }
 
   function ridOf(row) {
+    if (row && row.id != null && row.id !== "") return "t" + row.id;
     if (row.rid != null && row.rid !== "") return "d" + row.rid;
     if (row.route_id != null && row.route_id !== "") return "r" + row.route_id;
     if (row.response_id) return "x" + row.response_id;
-    return "t" + (row.t || "") + "|" + (row.agent || "") + "|" + (row.req || "") + "|" + (row.ms || "");
+    return "x" + (row.t || "") + "|" + (row.agent || "") + "|" + (row.req || "") + "|" + (row.ms || "");
   }
 
   function agentOf(row) {
@@ -383,7 +388,82 @@ h1 {
   }
 
   function modelOf(row) {
-    return row.served || row.model || "";
+    var tries, i, lastIncomplete, last;
+    tries = row && row.tries;
+    if (tries && tries.length) {
+      lastIncomplete = null;
+      for (i = 0; i < tries.length; i++) {
+        if (tries[i] && tries[i].done === false) lastIncomplete = tries[i];
+      }
+      if (lastIncomplete && lastIncomplete.model) return lastIncomplete.model;
+      last = tries[tries.length - 1];
+      if (last && last.model) return last.model;
+      if (tries[0] && tries[0].model) return tries[0].model;
+    }
+    return (row && (row.served || row.model)) || "";
+  }
+
+  function touchAgent(name) {
+    if (!name || name === "—") return;
+    agentLastSeen[name] = Date.now();
+    if (indexOf(agentOrder, name) === -1) agentOrder.push(name);
+  }
+
+  function ensureModel(model, prov) {
+    if (!model) return;
+    if (indexOf(chipOrder, model) === -1) {
+      chipOrder.push(model);
+      chipProv[model] = prov || "";
+    } else if (prov) {
+      chipProv[model] = prov;
+    }
+  }
+
+  function agentIsBusy(name) {
+    var rid, st, i, job;
+    if (!name) return false;
+    for (rid in liveState) {
+      if (!liveState.hasOwnProperty(rid)) continue;
+      st = liveState[rid];
+      if (!st) continue;
+      if (st.agent === name && (st.phase === "out" || st.phase === "perch" || st.phase === "back")) {
+        return true;
+      }
+    }
+    if (activeJob && activeJob.agent === name) return true;
+    for (i = 0; i < flightQueue.length; i++) {
+      job = flightQueue[i];
+      if (job && job.agent === name) return true;
+    }
+    return false;
+  }
+
+  function pruneAgents() {
+    var now = Date.now();
+    var kept = [];
+    var i, name, seenAt;
+    for (i = 0; i < agentOrder.length; i++) {
+      name = agentOrder[i];
+      if (agentIsBusy(name)) {
+        kept.push(name);
+        continue;
+      }
+      seenAt = agentLastSeen[name] || 0;
+      if (now - seenAt <= AGENT_TTL_MS) kept.push(name);
+      else delete agentLastSeen[name];
+    }
+    agentOrder = kept;
+  }
+
+  function countInflight() {
+    var n = 0;
+    var rid, st;
+    for (rid in liveState) {
+      if (!liveState.hasOwnProperty(rid)) continue;
+      st = liveState[rid];
+      if (st && (st.phase === "out" || st.phase === "perch" || st.phase === "back")) n += 1;
+    }
+    return n;
   }
 
   function indexOf(arr, name) {
@@ -630,18 +710,11 @@ h1 {
     for (i = 0; i < rows.length; i++) {
       row = rows[i] || {};
       agent = agentOf(row);
-      if (agent && indexOf(agentOrder, agent) === -1) {
-        agentOrder.push(agent);
-      }
+      touchAgent(agent);
       model = modelOf(row);
       if (!model) continue;
       prov = row.providerName || row.provider || "";
-      if (indexOf(chipOrder, model) === -1) {
-        chipOrder.push(model);
-        chipProv[model] = prov;
-      } else if (prov) {
-        chipProv[model] = prov;
-      }
+      ensureModel(model, prov);
     }
   }
 
@@ -735,59 +808,107 @@ h1 {
   }
 
   function finishFlight() {
-    clearOns();
-    hideBerry();
+    activeJob = null;
     flying = false;
     maybeStartFlight();
   }
 
-  function runFlight(job) {
+  function centersFor(job) {
     var agentCell = findAgentCell(job.agent);
     var modelCell = findModelCell(job.model);
-    var agentC, modelC, hubC, outCurve, backCurve, outPath;
-
-    if (!agentCell || !modelCell || !hubEl) {
-      flying = false;
-      maybeStartFlight();
-      return;
-    }
-
-    markPair(job.agent, job.model);
+    var agentC, modelC, hubC;
+    if (!agentCell || !modelCell || !hubEl) return null;
     agentC = cellCenter(agentCell);
     modelC = cellCenter(modelCell);
     hubC = hubCenter();
+    return {
+      agentC: { x: agentC.left + (BIRD_W / 2), y: agentC.top + (BIRD_H / 2) },
+      modelC: { x: modelC.left + (BIRD_W / 2), y: modelC.top + (BIRD_H / 2) },
+      hubC: hubC
+    };
+  }
 
-    // Centers for Bezier (cellCenter returns left/top of bird perch — convert)
-    agentC = { x: agentC.left + (BIRD_W / 2), y: agentC.top + (BIRD_H / 2) };
-    modelC = { x: modelC.left + (BIRD_W / 2), y: modelC.top + (BIRD_H / 2) };
-
-    outCurve = buildCurve(agentC, hubC, modelC, job.agent, true);
-    backCurve = buildCurve(modelC, hubC, agentC, job.agent, false);
-
+  function runOutbound(job, onLanded) {
+    var pts = centersFor(job);
+    var outCurve, outPath;
+    if (!pts) {
+      if (onLanded) onLanded(false);
+      finishFlight();
+      return;
+    }
+    markPair(job.agent, job.model);
+    outCurve = buildCurve(pts.agentC, pts.hubC, pts.modelC, job.agent, true);
     outPath = drawTrail(outCurve, job.hue);
-
     showBerry(job.hue);
     boostWings();
     if (flightTimer) clearTimeout(flightTimer);
     flightTimer = null;
-
-    // agent → via hub → model (berry), perch, then model → via hub → agent
     animateAlong(outCurve, FLY_MS, function () {
       boostWings();
+      if (outPath) outPath.setAttribute("opacity", "0.18");
+      markPair(job.agent, job.model);
+      if (onLanded) onLanded(true);
+      finishFlight();
+    });
+  }
+
+  function runReturn(job, onDone) {
+    var pts = centersFor(job);
+    var backCurve;
+    if (!pts) {
+      clearOns();
+      hideBerry();
+      if (onDone) onDone(false);
+      finishFlight();
+      return;
+    }
+    markPair(job.agent, job.model);
+    hideBerry();
+    boostWings();
+    if (flightTimer) clearTimeout(flightTimer);
+    flightTimer = null;
+    backCurve = buildCurve(pts.modelC, pts.hubC, pts.agentC, job.agent, false);
+    drawTrail(backCurve, job.hue);
+    animateAlong(backCurve, FLY_MS, function () {
       flightTimer = setTimeout(function () {
+        flightTimer = null;
+        clearOns();
         hideBerry();
-        boostWings();
-        if (outPath) {
-          outPath.setAttribute("opacity", "0.18");
+        if (onDone) onDone(true);
+        finishFlight();
+      }, 40);
+    });
+  }
+
+  function runFlight(job) {
+    var rid = job.rid;
+    var st;
+    if (job.leg === "back") {
+      if (rid && liveState[rid]) liveState[rid].phase = "back";
+      runReturn(job, function () {
+        if (rid && liveState[rid]) {
+          liveState[rid].phase = "done";
+          delete liveState[rid];
         }
-        drawTrail(backCurve, job.hue);
-        animateAlong(backCurve, FLY_MS, function () {
-          flightTimer = setTimeout(function () {
-            flightTimer = null;
-            finishFlight();
-          }, 40);
-        });
-      }, PERCH_MS);
+      });
+      return;
+    }
+    if (rid && liveState[rid]) liveState[rid].phase = "out";
+    runOutbound(job, function (ok) {
+      st = rid ? liveState[rid] : null;
+      if (!st) return;
+      if (!ok) {
+        delete liveState[rid];
+        return;
+      }
+      if (st.pendingReturn) {
+        st.pendingReturn = false;
+        st.phase = "perch";
+        enqueueReturn(st.agent, st.model, rid);
+      } else {
+        st.phase = "perch";
+        markPair(st.agent, st.model);
+      }
     });
   }
 
@@ -797,54 +918,134 @@ h1 {
     if (!flightQueue.length) return;
     job = flightQueue.shift();
     flying = true;
+    activeJob = job;
     runFlight(job);
   }
 
-  function enqueueFlight(agent, model) {
+  function enqueueOutbound(agent, model, rid) {
     if (!agent || !model) return;
     flightQueue.push({
       agent: agent,
       model: model,
-      hue: hashHue(agent)
+      hue: hashHue(agent),
+      leg: "out",
+      rid: rid
     });
     maybeStartFlight();
   }
 
-  function processRows(rows) {
-    var i, row, rid, agent, model;
-    var newestFirst = rows || [];
-    var discovered = [];
+  function enqueueReturn(agent, model, rid) {
+    var i, job;
+    if (!agent || !model) return;
+    for (i = 0; i < flightQueue.length; i++) {
+      job = flightQueue[i];
+      if (job && job.rid === rid && job.leg === "back") return;
+    }
+    if (activeJob && activeJob.rid === rid && activeJob.leg === "back") return;
+    flightQueue.push({
+      agent: agent,
+      model: model,
+      hue: hashHue(agent),
+      leg: "back",
+      rid: rid
+    });
+    maybeStartFlight();
+  }
 
-    syncOrders(newestFirst);
-    ensureDom();
+  function startReturnFor(rid) {
+    var st = liveState[rid];
+    if (!st) return;
+    if (st.phase === "done" || st.phase === "back") return;
+    if (st.phase === "seed") {
+      st.phase = "done";
+      delete liveState[rid];
+      return;
+    }
+    if (st.phase === "out") {
+      st.pendingReturn = true;
+      return;
+    }
+    if (st.phase === "perch") {
+      enqueueReturn(st.agent, st.model, rid);
+    }
+  }
+
+  function processLive(routes) {
+    var i, row, rid, agent, model, done, present;
+    var list = routes || [];
+    var current = {};
+
+    syncOrders(list);
 
     if (firstLoad) {
-      for (i = 0; i < newestFirst.length; i++) {
-        seenRids[ridOf(newestFirst[i] || {})] = true;
+      for (i = 0; i < list.length; i++) {
+        row = list[i] || {};
+        rid = ridOf(row);
+        seenRids[rid] = true;
+        liveState[rid] = {
+          phase: row.done === false ? "seed" : "done",
+          agent: agentOf(row),
+          model: modelOf(row),
+          pendingReturn: false
+        };
+        if (row.done !== false) delete liveState[rid];
       }
+      pruneAgents();
+      ensureDom();
       firstLoad = false;
       return;
     }
 
-    for (i = 0; i < newestFirst.length; i++) {
-      row = newestFirst[i] || {};
+    for (i = 0; i < list.length; i++) {
+      row = list[i] || {};
       rid = ridOf(row);
-      if (seenRids[rid]) continue;
-      seenRids[rid] = true;
+      current[rid] = true;
       agent = agentOf(row);
       model = modelOf(row);
-      discovered.push({ agent: agent, model: model });
+      done = row.done !== false;
+      touchAgent(agent);
+      ensureModel(model, row.providerName || row.provider || "");
+
+      if (!seenRids[rid]) {
+        seenRids[rid] = true;
+        if (done) {
+          continue;
+        }
+        liveState[rid] = {
+          phase: "out",
+          agent: agent,
+          model: model,
+          pendingReturn: false
+        };
+        ensureDom();
+        enqueueOutbound(agent, model, rid);
+        continue;
+      }
+
+      if (liveState[rid]) {
+        if (agent) liveState[rid].agent = agent;
+        if (model) liveState[rid].model = model;
+        if (done) startReturnFor(rid);
+      }
     }
 
-    // Queue in chronological order (API is newest-first).
-    for (i = discovered.length - 1; i >= 0; i--) {
-      enqueueFlight(discovered[i].agent, discovered[i].model);
+    for (rid in liveState) {
+      if (!liveState.hasOwnProperty(rid)) continue;
+      if (current[rid]) continue;
+      present = liveState[rid];
+      if (!present) continue;
+      if (present.phase === "out" || present.phase === "perch" || present.phase === "seed") {
+        startReturnFor(rid);
+      }
     }
+
+    pruneAgents();
+    ensureDom();
   }
 
   function tick() {
     var xhr = new XMLHttpRequest();
-    xhr.open("GET", "/api/routes", true);
+    xhr.open("GET", "/api/live", true);
     xhr.timeout = 8000;
     xhr.onreadystatechange = function () {
       if (xhr.readyState !== 4) return;
@@ -856,9 +1057,20 @@ h1 {
           setMeta(false, "bad json");
           return;
         }
-        var rows = (data && data.rows) ? data.rows : [];
-        processRows(rows);
-        setMeta(true, rows.length + " routes · q " + flightQueue.length + (flying ? " · flying" : ""));
+        var routes = (data && data.routes) ? data.routes : [];
+        var inflight = 0;
+        var j;
+        for (j = 0; j < routes.length; j++) {
+          if (routes[j] && routes[j].done === false) inflight += 1;
+        }
+        processLive(routes);
+        setMeta(
+          true,
+          "in " + inflight +
+            " · live " + countInflight() +
+            " · q " + flightQueue.length +
+            (flying ? " · flying" : "")
+        );
       } else {
         setMeta(false, "http " + xhr.status);
       }
