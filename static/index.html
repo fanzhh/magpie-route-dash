@@ -62,6 +62,7 @@ h1 {
   -webkit-justify-content: center;
   justify-content: center;
   min-height: 72px;
+  margin-bottom: 12px;
 }
 .agent-cell {
   display: block;
@@ -110,8 +111,8 @@ h1 {
   -webkit-box-pack: center;
   -webkit-justify-content: center;
   justify-content: center;
-  min-height: 40px;
-  padding: 8px 0;
+  min-height: 72px;
+  padding: 24px 0;
   text-align: center;
 }
 #hub .hub-mark {
@@ -152,6 +153,7 @@ h1 {
   justify-content: center;
   width: 100%;
   min-height: 88px;
+  margin-top: 16px;
 }
 .model-cell {
   display: block;
@@ -355,6 +357,7 @@ h1 {
   var animTimer = null;
   var activeTrails = [];
   var activeJob = null;
+  var liveLinks = {};
 
   function pad(n) {
     return n < 10 ? "0" + n : "" + n;
@@ -581,6 +584,18 @@ h1 {
     };
   }
 
+  function perchOnNode(cell) {
+    var cellRect, stageRect, inset;
+    if (!cell) return null;
+    cellRect = cell.getBoundingClientRect();
+    stageRect = stage.getBoundingClientRect();
+    inset = 4;
+    return {
+      left: (cellRect.left - stageRect.left) + inset,
+      top: (cellRect.top - stageRect.top) + inset
+    };
+  }
+
   function placeBird(left, top, faceDir) {
     flier.style.visibility = "visible";
     if (faceDir != null) setFace(faceDir);
@@ -683,6 +698,75 @@ h1 {
       }
     }, TRAIL_FADE_MS);
     return path;
+  }
+
+  function clearLiveLink(rid) {
+    var path;
+    if (!rid || !liveLinks[rid]) return;
+    path = liveLinks[rid];
+    if (path && path.parentNode) path.parentNode.removeChild(path);
+    delete liveLinks[rid];
+  }
+
+  function setLiveLink(rid, agent, model, hue) {
+    var agentCell, modelCell, hubC, agentPos, modelPos, agentC, modelC, curve, d, path;
+    if (!rid || !trailsEl) return;
+    clearLiveLink(rid);
+    agentCell = findAgentCell(agent);
+    modelCell = findModelCell(model);
+    if (!agentCell || !modelCell || !hubEl) return;
+    syncTrailsSize();
+    hubC = hubCenter();
+    agentPos = cellCenter(agentCell);
+    modelPos = cellCenter(modelCell);
+    agentC = { x: agentPos.left + (BIRD_W / 2), y: agentPos.top + (BIRD_H / 2) };
+    modelC = { x: modelPos.left + (BIRD_W / 2), y: modelPos.top + (BIRD_H / 2) };
+    curve = buildCurve(agentC, hubC, modelC, agent, true);
+    d = "M " + curve.p0.x + " " + curve.p0.y +
+      " Q " + curve.p1.x + " " + curve.p1.y +
+      " " + curve.p2.x + " " + curve.p2.y;
+    path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "hsl(" + hue + ", 70%, 60%)");
+    path.setAttribute("stroke-width", "2.5");
+    path.setAttribute("stroke-dasharray", "8 6");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("opacity", "0.45");
+    path.setAttribute("data-live-link", rid);
+    trailsEl.appendChild(path);
+    liveLinks[rid] = path;
+  }
+
+  function redrawLiveLinks() {
+    var rid, st, keys, i;
+    keys = [];
+    for (rid in liveLinks) {
+      if (liveLinks.hasOwnProperty(rid)) keys.push(rid);
+    }
+    for (i = 0; i < keys.length; i++) clearLiveLink(keys[i]);
+    for (rid in liveState) {
+      if (!liveState.hasOwnProperty(rid)) continue;
+      st = liveState[rid];
+      if (st && (st.phase === "out" || st.phase === "perch")) {
+        setLiveLink(rid, st.agent, st.model, hashHue(st.agent));
+      }
+    }
+  }
+
+  function snapPerchedBirds() {
+    var rid, st, modelCell, perch;
+    if (flying) return;
+    for (rid in liveState) {
+      if (!liveState.hasOwnProperty(rid)) continue;
+      st = liveState[rid];
+      if (!st || st.phase !== "perch") continue;
+      modelCell = findModelCell(st.model);
+      if (!modelCell) continue;
+      perch = perchOnNode(modelCell);
+      if (perch) placeBird(perch.left, perch.top, null);
+      return;
+    }
   }
 
   function stopAnim() {
@@ -796,13 +880,20 @@ h1 {
   function ensureDom() {
     var aKey = agentOrder.join("|");
     var cKey = chipOrder.join("|");
+    var changed = false;
     if (aKey !== lastAgentKey) {
       rebuildAgents();
       lastAgentKey = aKey;
+      changed = true;
     }
     if (cKey !== lastChipKey) {
       rebuildModels();
       lastChipKey = cKey;
+      changed = true;
+    }
+    if (changed) {
+      redrawLiveLinks();
+      snapPerchedBirds();
     }
   }
 
@@ -818,6 +909,7 @@ h1 {
       name = cells[i].getAttribute("data-model") || "";
       cells[i].className = name === model ? "model-cell on" : "model-cell";
     }
+    redrawLiveLinks();
   }
 
   function finishFlight() {
@@ -843,13 +935,14 @@ h1 {
 
   function runOutbound(job, onLanded) {
     var pts = centersFor(job);
-    var outCurve, outPath;
+    var outCurve, outPath, modelCell, perch;
     if (!pts) {
       if (onLanded) onLanded(false);
       finishFlight();
       return;
     }
     markPair(job.agent, job.model);
+    if (job.rid) setLiveLink(job.rid, job.agent, job.model, job.hue);
     outCurve = buildCurve(pts.agentC, pts.hubC, pts.modelC, job.agent, true);
     outPath = drawTrail(outCurve, job.hue);
     showBerry(job.hue);
@@ -859,6 +952,11 @@ h1 {
     animateAlong(outCurve, FLY_MS, function () {
       boostWings();
       if (outPath) outPath.setAttribute("opacity", "0.18");
+      modelCell = findModelCell(job.model);
+      if (modelCell) {
+        perch = perchOnNode(modelCell);
+        if (perch) placeBird(perch.left, perch.top, null);
+      }
       markPair(job.agent, job.model);
       if (onLanded) onLanded(true);
       finishFlight();
@@ -867,8 +965,9 @@ h1 {
 
   function runReturn(job, onDone) {
     var pts = centersFor(job);
-    var backCurve;
+    var backCurve, agentCell, perch;
     if (!pts) {
+      if (job.rid) clearLiveLink(job.rid);
       clearOns();
       hideBerry();
       if (onDone) onDone(false);
@@ -883,8 +982,14 @@ h1 {
     backCurve = buildCurve(pts.modelC, pts.hubC, pts.agentC, job.agent, false);
     drawTrail(backCurve, job.hue);
     animateAlong(backCurve, FLY_MS, function () {
+      agentCell = findAgentCell(job.agent);
+      if (agentCell) {
+        perch = perchOnNode(agentCell);
+        if (perch) placeBird(perch.left, perch.top, null);
+      }
       flightTimer = setTimeout(function () {
         flightTimer = null;
+        if (job.rid) clearLiveLink(job.rid);
         clearOns();
         hideBerry();
         if (onDone) onDone(true);
@@ -899,6 +1004,7 @@ h1 {
     if (job.leg === "back") {
       if (rid && liveState[rid]) liveState[rid].phase = "back";
       runReturn(job, function () {
+        if (rid) clearLiveLink(rid);
         if (rid && liveState[rid]) {
           liveState[rid].phase = "done";
           delete liveState[rid];
@@ -907,10 +1013,15 @@ h1 {
       return;
     }
     if (rid && liveState[rid]) liveState[rid].phase = "out";
+    if (rid) setLiveLink(rid, job.agent, job.model, job.hue);
     runOutbound(job, function (ok) {
       st = rid ? liveState[rid] : null;
-      if (!st) return;
+      if (!st) {
+        if (rid) clearLiveLink(rid);
+        return;
+      }
       if (!ok) {
+        clearLiveLink(rid);
         delete liveState[rid];
         return;
       }
@@ -1054,6 +1165,8 @@ h1 {
 
     pruneAgents();
     ensureDom();
+    redrawLiveLinks();
+    snapPerchedBirds();
   }
 
   function tick() {
@@ -1098,17 +1211,34 @@ h1 {
   }
 
   function onResize() {
+    var rid, st, modelCell, perch, found;
+    var stageRect, left, hub, top, hubRect;
     layoutModelGrid();
+    redrawLiveLinks();
     if (flying) return;
+    found = false;
+    for (rid in liveState) {
+      if (!liveState.hasOwnProperty(rid)) continue;
+      st = liveState[rid];
+      if (!st || st.phase !== "perch") continue;
+      modelCell = findModelCell(st.model);
+      if (!modelCell) continue;
+      perch = perchOnNode(modelCell);
+      if (perch) {
+        placeBird(perch.left, perch.top, null);
+        found = true;
+        break;
+      }
+    }
+    if (found) return;
     if (!birdPlaced) return;
-    placeBird(birdLeft, birdTop, null);
     // Snap bird near hub center when idle.
-    var stageRect = stage.getBoundingClientRect();
-    var left = (stage.clientWidth / 2) - (BIRD_W / 2);
-    var hub = document.getElementById("hub");
-    var top = 80;
+    stageRect = stage.getBoundingClientRect();
+    left = (stage.clientWidth / 2) - (BIRD_W / 2);
+    hub = document.getElementById("hub");
+    top = 80;
     if (hub) {
-      var hubRect = hub.getBoundingClientRect();
+      hubRect = hub.getBoundingClientRect();
       top = (hubRect.top - stageRect.top) + (hubRect.height / 2) - (BIRD_H / 2);
     }
     placeBird(left, top, 1);
